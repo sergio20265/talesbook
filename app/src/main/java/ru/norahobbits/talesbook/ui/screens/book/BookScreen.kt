@@ -60,6 +60,7 @@ fun BookScreen(
     var chapterToRename by remember { mutableStateOf<Chapter?>(null) }
     var chapterForBackground by remember { mutableStateOf<Chapter?>(null) }
     var showEditBook by remember { mutableStateOf(false) }
+    var showExportMenu by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -148,22 +149,49 @@ fun BookScreen(
                         IconButton(onClick = { showEditBook = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Редактировать", tint = colors.accent)
                         }
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    val title = book?.title ?: "book-of-tales"
-                                    val html = viewModel.exportBookHtml()
-                                    shareTextFile(
-                                        context = context,
-                                        fileName = "${safeFileName(title)}.html",
-                                        mimeType = "text/html",
-                                        content = html,
-                                        chooserTitle = "Экспортировать для чтения"
-                                    )
-                                }
+                        Box {
+                            IconButton(onClick = { showExportMenu = true }) {
+                                Icon(Icons.Default.IosShare, contentDescription = "Экспортировать", tint = colors.accent)
                             }
-                        ) {
-                            Icon(Icons.Default.IosShare, contentDescription = "Экспортировать для чтения", tint = colors.accent)
+                            DropdownMenu(
+                                expanded = showExportMenu,
+                                onDismissRequest = { showExportMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Word (.doc)") },
+                                    onClick = {
+                                        showExportMenu = false
+                                        scope.launch {
+                                            val title = book?.title ?: "book-of-tales"
+                                            val doc = viewModel.exportBookWord()
+                                            shareTextFile(
+                                                context = context,
+                                                fileName = "${safeFileName(title)}.doc",
+                                                mimeType = "application/msword",
+                                                content = doc,
+                                                chooserTitle = "Экспортировать в Word"
+                                            )
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Для чтения (HTML)") },
+                                    onClick = {
+                                        showExportMenu = false
+                                        scope.launch {
+                                            val title = book?.title ?: "book-of-tales"
+                                            val html = viewModel.exportBookHtml()
+                                            shareTextFile(
+                                                context = context,
+                                                fileName = "${safeFileName(title)}.html",
+                                                mimeType = "text/html",
+                                                content = html,
+                                                chooserTitle = "Экспортировать для чтения"
+                                            )
+                                        }
+                                    }
+                                )
+                            }
                         }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Default.Tune, contentDescription = "Оформление", tint = colors.accent)

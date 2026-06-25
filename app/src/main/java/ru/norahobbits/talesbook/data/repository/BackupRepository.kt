@@ -96,7 +96,48 @@ class BackupRepository @Inject constructor(
             }
             chapters.forEach { chapter ->
                 appendLine("<h2>${chapter.title.escapeHtml()}</h2>")
-                appendLine(chapter.content.ifBlank { "<p></p>" })
+                appendLine(chapter.content.exportContentHtml())
+            }
+            appendLine("</body></html>")
+        }
+    }
+
+    /**
+     * Android's [android.text.Html] serializes alignment as `text-align:start|end`, which
+     * Word and older HTML renderers don't honour. Map them to `left`/`right` for export.
+     */
+    private fun String.exportContentHtml(): String = ifBlank { "<p></p>" }
+        .replace("text-align:start", "text-align:left")
+        .replace("text-align:end", "text-align:right")
+
+    suspend fun exportBookWord(bookId: Long): String {
+        val book = db.bookDao().getById(bookId) ?: error("Книга не найдена")
+        val chapters = db.chapterDao().getAll()
+            .filter { it.bookId == bookId }
+            .sortedWith(compareBy({ it.sortOrder }, { it.createdAt }))
+        return buildString {
+            appendLine("<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" " +
+                "xmlns:w=\"urn:schemas-microsoft-com:office:word\" " +
+                "xmlns=\"http://www.w3.org/TR/REC-html40\">")
+            appendLine("<head><meta charset=\"utf-8\">")
+            appendLine("<meta name=\"ProgId\" content=\"Word.Document\">")
+            appendLine("<title>${book.title.escapeHtml()}</title>")
+            appendLine("<!--[if gte mso 9]><xml><w:WordDocument>" +
+                "<w:View>Print</w:View><w:Zoom>100</w:Zoom>" +
+                "</w:WordDocument></xml><![endif]-->")
+            appendLine("<style>")
+            appendLine("@page{margin:2cm;}")
+            appendLine("body{font-family:'Times New Roman',serif;font-size:14pt;line-height:1.5;}")
+            appendLine("h1{font-size:24pt;text-align:center;} h2{font-size:18pt;page-break-before:always;}")
+            appendLine(".description{font-style:italic;text-align:center;color:#555;} p{margin:0 0 8pt;text-indent:1.25cm;}")
+            appendLine("</style></head><body>")
+            appendLine("<h1>${book.title.escapeHtml()}</h1>")
+            if (book.description.isNotBlank()) {
+                appendLine("<p class=\"description\">${book.description.escapeHtml()}</p>")
+            }
+            chapters.forEach { chapter ->
+                appendLine("<h2>${chapter.title.escapeHtml()}</h2>")
+                appendLine(chapter.content.exportContentHtml())
             }
             appendLine("</body></html>")
         }

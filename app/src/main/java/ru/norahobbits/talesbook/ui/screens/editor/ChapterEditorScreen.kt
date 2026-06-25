@@ -6,18 +6,24 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.graphics.Typeface
 import android.text.Editable
 import android.text.Html
+import android.text.Layout
 import android.text.Spannable
 import android.text.Spanned
 import android.text.TextWatcher
+import android.text.style.AlignmentSpan
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.inputmethod.EditorInfo
+import android.content.Context
 import android.widget.EditText
+import androidx.core.content.res.ResourcesCompat
+import ru.norahobbits.talesbook.R
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -231,7 +237,10 @@ fun ChapterEditorScreen(
                             FormattingToolbar(
                                 onBold = { editorActions?.bold?.invoke() },
                                 onItalic = { editorActions?.italic?.invoke() },
-                                onUnderline = { editorActions?.underline?.invoke() }
+                                onUnderline = { editorActions?.underline?.invoke() },
+                                onAlignLeft = { editorActions?.alignLeft?.invoke() },
+                                onAlignCenter = { editorActions?.alignCenter?.invoke() },
+                                onAlignRight = { editorActions?.alignRight?.invoke() }
                             )
                         }
                         Box(modifier = Modifier.weight(1f)) {
@@ -334,12 +343,18 @@ private fun ChapterTitleStrip(title: String) {
 private fun FormattingToolbar(
     onBold: () -> Unit,
     onItalic: () -> Unit,
-    onUnderline: () -> Unit
+    onUnderline: () -> Unit,
+    onAlignLeft: () -> Unit,
+    onAlignCenter: () -> Unit,
+    onAlignRight: () -> Unit
 ) {
     val colors = LocalTalesbookColors.current
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(bottom = 8.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(bottom = 8.dp)
     ) {
         FilledTonalIconButton(onClick = onBold) {
             Text("B", color = colors.textPrimary, style = MaterialTheme.typography.titleMedium)
@@ -349,6 +364,21 @@ private fun FormattingToolbar(
         }
         FilledTonalIconButton(onClick = onUnderline) {
             Text("U", color = colors.textPrimary, style = MaterialTheme.typography.titleMedium)
+        }
+        Box(
+            modifier = Modifier
+                .height(28.dp)
+                .width(1.dp)
+                .background(colors.textHint.copy(alpha = 0.4f))
+        )
+        FilledTonalIconButton(onClick = onAlignLeft) {
+            Icon(Icons.Default.FormatAlignLeft, contentDescription = "По левому краю", tint = colors.textPrimary)
+        }
+        FilledTonalIconButton(onClick = onAlignCenter) {
+            Icon(Icons.Default.FormatAlignCenter, contentDescription = "По центру", tint = colors.textPrimary)
+        }
+        FilledTonalIconButton(onClick = onAlignRight) {
+            Icon(Icons.Default.FormatAlignRight, contentDescription = "По правому краю", tint = colors.textPrimary)
         }
     }
 }
@@ -379,7 +409,10 @@ private fun FontSizeCornerControls(
 private data class RichEditorActions(
     val bold: () -> Unit,
     val italic: () -> Unit,
-    val underline: () -> Unit
+    val underline: () -> Unit,
+    val alignLeft: () -> Unit,
+    val alignCenter: () -> Unit,
+    val alignRight: () -> Unit
 )
 
 @Composable
@@ -403,11 +436,24 @@ private fun RichTextEditor(
 
     DisposableEffect(editTextRef) {
         val editText = editTextRef ?: return@DisposableEffect onDispose {}
+        // Span-only changes (bold/italic/underline/alignment) do not fire the TextWatcher,
+        // so push the current HTML to the model explicitly after each formatting action —
+        // otherwise formatting applied without further typing would be lost on save.
+        val sync = {
+            val src = editText.text ?: Spannable.Factory.getInstance().newSpannable("")
+            onContentChanged(
+                Html.toHtml(src, Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE),
+                src.toString()
+            )
+        }
         onActionsReady(
             RichEditorActions(
-                bold = { editText.toggleStyle(Typeface.BOLD) },
-                italic = { editText.toggleStyle(Typeface.ITALIC) },
-                underline = { editText.toggleUnderline() }
+                bold = { editText.toggleStyle(Typeface.BOLD); sync() },
+                italic = { editText.toggleStyle(Typeface.ITALIC); sync() },
+                underline = { editText.toggleUnderline(); sync() },
+                alignLeft = { editText.setAlignment(Layout.Alignment.ALIGN_NORMAL); sync() },
+                alignCenter = { editText.setAlignment(Layout.Alignment.ALIGN_CENTER); sync() },
+                alignRight = { editText.setAlignment(Layout.Alignment.ALIGN_OPPOSITE); sync() }
             )
         )
         onDispose {}
@@ -425,7 +471,7 @@ private fun RichTextEditor(
                 setHintTextColor(colors.textHint.toArgb())
                 hint = "Начните свою историю здесь..."
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, fontSize)
-                typeface = androidTypeface(fontFamily)
+                typeface = androidTypeface(context, fontFamily)
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
                 minLines = 16
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or
@@ -433,7 +479,7 @@ private fun RichTextEditor(
                     android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                 imeOptions = EditorInfo.IME_ACTION_NONE
                 setPadding(18.dp.value.toInt(), 16.dp.value.toInt(), 18.dp.value.toInt(), 16.dp.value.toInt())
-                setText(Html.fromHtml(initialHtml, Html.FROM_HTML_MODE_LEGACY))
+                setText(Html.fromHtml(normalizeToHtml(initialHtml), Html.FROM_HTML_MODE_LEGACY))
                 setSelection(text?.length ?: 0)
                 requestFocus()
 
@@ -462,6 +508,18 @@ private fun RichTextEditor(
                             toggleStyle(Typeface.ITALIC)
                             true
                         }
+                        ctrl && keyCode == AndroidKeyEvent.KEYCODE_L -> {
+                            setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                            true
+                        }
+                        ctrl && keyCode == AndroidKeyEvent.KEYCODE_E -> {
+                            setAlignment(Layout.Alignment.ALIGN_CENTER)
+                            true
+                        }
+                        ctrl && keyCode == AndroidKeyEvent.KEYCODE_R -> {
+                            setAlignment(Layout.Alignment.ALIGN_OPPOSITE)
+                            true
+                        }
                         ctrl && keyCode == AndroidKeyEvent.KEYCODE_EQUALS -> {
                             onIncreaseFont()
                             true
@@ -483,7 +541,7 @@ private fun RichTextEditor(
         update = { editText ->
             editText.setTextColor(textColor.toArgb())
             editText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, fontSize)
-            editText.typeface = androidTypeface(fontFamily)
+            editText.typeface = androidTypeface(editText.context, fontFamily)
         }
     )
 }
@@ -502,15 +560,90 @@ private fun EditText.toggleUnderline() {
     text.setSpan(UnderlineSpan(), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 }
 
-private fun androidTypeface(fontFamily: String): Typeface = when (fontFamily) {
+/**
+ * Aligns whole paragraphs intersecting the current selection (or caret line).
+ * [AlignmentSpan] is a paragraph span, so the range is expanded to line boundaries
+ * and any previous alignment in that range is cleared first.
+ */
+private fun EditText.setAlignment(alignment: Layout.Alignment) {
+    val editable = text ?: return
+    val len = editable.length
+    if (len == 0) return
+    val selStart = selectionStart.coerceIn(0, len)
+    val selEnd = selectionEnd.coerceIn(0, len)
+    var start = minOf(selStart, selEnd)
+    var end = maxOf(selStart, selEnd)
+    // Expand backward to the start of the paragraph (start of text or just after a newline).
+    while (start > 0 && editable[start - 1] != '\n') start--
+    // Expand forward past the end of the paragraph, including its trailing newline so the
+    // span ends on a paragraph boundary (required by SPAN_PARAGRAPH).
+    while (end < len && editable[end] != '\n') end++
+    if (end < len) end++
+    if (start >= end) return
+    editable.getSpans(start, end, AlignmentSpan::class.java).forEach { editable.removeSpan(it) }
+    editable.setSpan(AlignmentSpan.Standard(alignment), start, end, Spanned.SPAN_PARAGRAPH)
+}
+
+private fun androidTypeface(context: Context, fontFamily: String): Typeface = when (fontFamily) {
     "serif" -> Typeface.SERIF
     "monospace" -> Typeface.MONOSPACE
-    "cursive" -> Typeface.create("casual", Typeface.NORMAL)
+    // Bundled handwriting font with Cyrillic glyphs — the system "casual"/"cursive"
+    // families are unreliable and Latin-only, so Russian text fell back to default.
+    "cursive" -> ResourcesCompat.getFont(context, R.font.caveat) ?: Typeface.SANS_SERIF
     else -> Typeface.SANS_SERIF
 }
 
 private fun htmlToPlainText(html: String): String =
-    Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString()
+    Html.fromHtml(normalizeToHtml(html), Html.FROM_HTML_MODE_LEGACY).toString()
+
+private val htmlTagRegex =
+    Regex("</?(p|br|b|i|u|em|strong|span|div|h[1-6]|ul|ol|li|blockquote)\\b", RegexOption.IGNORE_CASE)
+
+private fun looksLikeHtml(s: String): Boolean = htmlTagRegex.containsMatchIn(s)
+
+/**
+ * Chapters created with the old markdown/plain-text editor were stored as raw text.
+ * Feeding that straight into [Html.fromHtml] mangled it (any `<` swallowed the rest,
+ * line breaks collapsed) and re-saving overwrote the original. Convert legacy text to
+ * HTML — interpreting common markdown (headings, bold, italic) and preserving
+ * paragraphs/line breaks — before loading. Content that already looks like HTML is
+ * returned untouched so the conversion only ever runs once per chapter.
+ */
+private fun normalizeToHtml(raw: String): String {
+    if (raw.isBlank() || looksLikeHtml(raw)) return raw
+    return raw
+        .replace("\r\n", "\n")
+        .split(Regex("\\n[ \\t]*\\n+"))
+        .map { it.trim('\n') }
+        .filter { it.isNotBlank() }
+        .joinToString("") { block -> renderMarkdownBlock(block) }
+        .ifBlank { "<p>${inlineMarkdown(raw)}</p>" }
+}
+
+private val headingRegex = Regex("^(#{1,6})\\s+(.*)$")
+
+private fun renderMarkdownBlock(block: String): String {
+    val heading = headingRegex.find(block)
+    if (heading != null && !heading.groupValues[2].contains('\n')) {
+        val level = heading.groupValues[1].length
+        return "<h$level>${inlineMarkdown(heading.groupValues[2].trim())}</h$level>"
+    }
+    val body = block.split("\n").joinToString("<br>") { inlineMarkdown(it) }
+    return "<p>$body</p>"
+}
+
+/** Escapes HTML entities, then applies inline markdown (bold before italic). */
+private fun inlineMarkdown(line: String): String {
+    var s = line
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    s = Regex("\\*\\*(.+?)\\*\\*").replace(s) { "<b>${it.groupValues[1]}</b>" }
+    s = Regex("__(.+?)__").replace(s) { "<b>${it.groupValues[1]}</b>" }
+    s = Regex("(?<![*\\w])\\*(?!\\s)(.+?)(?<!\\s)\\*(?![*\\w])").replace(s) { "<i>${it.groupValues[1]}</i>" }
+    s = Regex("(?<![_\\w])_(?!\\s)(.+?)(?<!\\s)_(?![_\\w])").replace(s) { "<i>${it.groupValues[1]}</i>" }
+    return s
+}
 
 @Composable
 private fun ChapterRail(
