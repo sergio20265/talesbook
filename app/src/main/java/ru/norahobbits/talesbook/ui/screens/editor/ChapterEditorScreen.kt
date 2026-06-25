@@ -120,8 +120,13 @@ fun ChapterEditorScreen(
         }
     }
 
+    fun flushEditorToViewModel() {
+        editorActions?.flush?.invoke()
+    }
+
     BackHandler {
         scope.launch {
+            flushEditorToViewModel()
             viewModel.saveNowAndWait()
             onBack()
         }
@@ -170,6 +175,7 @@ fun ChapterEditorScreen(
                     navigationIcon = {
                         IconButton(onClick = {
                             scope.launch {
+                                flushEditorToViewModel()
                                 viewModel.saveNowAndWait()
                                 onBack()
                             }
@@ -218,6 +224,7 @@ fun ChapterEditorScreen(
                         currentChapterId = chapterId,
                         onOpenChapter = {
                             scope.launch {
+                                flushEditorToViewModel()
                                 viewModel.saveNowAndWait()
                                 onOpenChapter(it)
                             }
@@ -423,7 +430,8 @@ private data class RichEditorActions(
     val underline: () -> Unit,
     val alignLeft: () -> Unit,
     val alignCenter: () -> Unit,
-    val alignRight: () -> Unit
+    val alignRight: () -> Unit,
+    val flush: () -> Unit
 )
 
 @Composable
@@ -464,10 +472,11 @@ private fun RichTextEditor(
                 underline = { editText.toggleUnderline(); sync() },
                 alignLeft = { editText.setAlignment(Layout.Alignment.ALIGN_NORMAL); sync() },
                 alignCenter = { editText.setAlignment(Layout.Alignment.ALIGN_CENTER); sync() },
-                alignRight = { editText.setAlignment(Layout.Alignment.ALIGN_OPPOSITE); sync() }
+                alignRight = { editText.setAlignment(Layout.Alignment.ALIGN_OPPOSITE); sync() },
+                flush = sync
             )
         )
-        onDispose {}
+        onDispose { sync() }
     }
 
     AndroidView(
