@@ -37,4 +37,6 @@ class AppearanceViewModel @Inject constructor(
     suspend fun exportBackup(): String = backupRepository.exportJson()
 
     suspend fun importBackup(json: String) = backupRepository.importJson(json)
+
+    suspend fun exportBookHtml(bookId: Long): String = backupRepository.exportBookHtml(bookId)
 }

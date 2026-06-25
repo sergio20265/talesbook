@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import ru.norahobbits.talesbook.data.model.Book
 import ru.norahobbits.talesbook.data.model.Chapter
+import ru.norahobbits.talesbook.data.repository.BackupRepository
 import ru.norahobbits.talesbook.data.repository.BookRepository
 import ru.norahobbits.talesbook.data.repository.ChapterRepository
 import javax.inject.Inject
@@ -24,6 +25,7 @@ data class BookStats(
 class BookViewModel @Inject constructor(
     private val bookRepo: BookRepository,
     private val chapterRepo: ChapterRepository,
+    private val backupRepository: BackupRepository,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -85,4 +87,6 @@ class BookViewModel @Inject constructor(
     fun updateChapterBackground(chapter: Chapter, uri: String?) {
         viewModelScope.launch { chapterRepo.update(chapter.copy(backgroundImageUri = uri)) }
     }
+
+    suspend fun exportBookHtml(): String = backupRepository.exportBookHtml(bookId)
 }

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import ru.norahobbits.talesbook.data.model.Chapter
 import ru.norahobbits.talesbook.settings.AppSettings
 import ru.norahobbits.talesbook.settings.ContentViewMode
@@ -35,6 +36,8 @@ import ru.norahobbits.talesbook.ui.components.WindowSizeClass
 import ru.norahobbits.talesbook.ui.components.contentMaxWidth
 import ru.norahobbits.talesbook.ui.components.rememberWindowSizeClass
 import ru.norahobbits.talesbook.ui.theme.LocalTalesbookColors
+import ru.norahobbits.talesbook.ui.utils.safeFileName
+import ru.norahobbits.talesbook.ui.utils.shareTextFile
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -59,6 +62,7 @@ fun BookScreen(
     var showEditBook by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val coverLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -143,6 +147,23 @@ fun BookScreen(
                         }
                         IconButton(onClick = { showEditBook = true }) {
                             Icon(Icons.Default.Edit, contentDescription = "Редактировать", tint = colors.accent)
+                        }
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    val title = book?.title ?: "book-of-tales"
+                                    val html = viewModel.exportBookHtml()
+                                    shareTextFile(
+                                        context = context,
+                                        fileName = "${safeFileName(title)}.html",
+                                        mimeType = "text/html",
+                                        content = html,
+                                        chooserTitle = "Экспортировать для чтения"
+                                    )
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.IosShare, contentDescription = "Экспортировать для чтения", tint = colors.accent)
                         }
                         IconButton(onClick = onOpenSettings) {
                             Icon(Icons.Default.Tune, contentDescription = "Оформление", tint = colors.accent)

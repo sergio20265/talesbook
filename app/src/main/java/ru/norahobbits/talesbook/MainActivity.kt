@@ -13,6 +13,10 @@ import androidx.core.view.WindowCompat
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import ru.norahobbits.talesbook.data.repository.BackupRepository
 import ru.norahobbits.talesbook.media.MusicPlayerService
 import ru.norahobbits.talesbook.navigation.AppNavigation
 import ru.norahobbits.talesbook.settings.AppSettings
@@ -25,6 +29,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var settingsDataStore: AppSettingsDataStore
+
+    @Inject
+    lateinit var backupRepository: BackupRepository
 
     private var musicService: MusicPlayerService? = null
     private var musicBound = false
@@ -58,6 +65,27 @@ class MainActivity : ComponentActivity() {
 
             TalesbookTheme(appTheme = settings.selectedTheme) {
                 AppNavigation(appSettings = settings)
+            }
+        }
+
+        handleIncomingBackup(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingBackup(intent)
+    }
+
+    private fun handleIncomingBackup(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val uri = intent.data ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    input.bufferedReader(Charsets.UTF_8).readText()
+                }?.takeIf { it.contains("\"books\"") && it.contains("\"chapters\"") }
+                    ?.let { backupRepository.importJson(it) }
             }
         }
     }

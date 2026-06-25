@@ -29,6 +29,7 @@ import ru.norahobbits.talesbook.settings.ContentViewMode
 import ru.norahobbits.talesbook.ui.components.WindowSizeClass
 import ru.norahobbits.talesbook.ui.components.rememberWindowSizeClass
 import ru.norahobbits.talesbook.ui.theme.*
+import ru.norahobbits.talesbook.ui.utils.shareTextFile
 
 private data class ThemeOption(
     val theme: AppTheme,
@@ -402,6 +403,31 @@ fun AppearanceSettingsScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("Загрузить")
                     }
+                }
+                Button(
+                    onClick = {
+                        scope.launch {
+                            runCatching {
+                                shareTextFile(
+                                    context = context,
+                                    fileName = "book-of-tales-backup.json",
+                                    mimeType = "application/json",
+                                    content = viewModel.exportBackup(),
+                                    chooserTitle = "Поделиться копией"
+                                )
+                            }.onFailure {
+                                statusText = "Не удалось поделиться копией"
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.accent, contentColor = colors.background
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.Share, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Поделиться копией")
                 }
                 statusText?.let {
                     Text(it, color = colors.textHint, style = MaterialTheme.typography.labelMedium)

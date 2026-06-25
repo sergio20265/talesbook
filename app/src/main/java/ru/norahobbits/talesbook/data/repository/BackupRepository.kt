@@ -76,6 +76,32 @@ class BackupRepository @Inject constructor(
         }
     }
 
+    suspend fun exportBookHtml(bookId: Long): String {
+        val book = db.bookDao().getById(bookId) ?: error("Книга не найдена")
+        val chapters = db.chapterDao().getAll()
+            .filter { it.bookId == bookId }
+            .sortedWith(compareBy({ it.sortOrder }, { it.createdAt }))
+        return buildString {
+            appendLine("<!doctype html>")
+            appendLine("<html><head><meta charset=\"utf-8\">")
+            appendLine("<title>${book.title.escapeHtml()}</title>")
+            appendLine("<style>")
+            appendLine("body{font-family:Georgia,'Times New Roman',serif;line-height:1.65;margin:48px;color:#1f1a14;}")
+            appendLine("h1{font-size:32px;margin-bottom:8px;} h2{font-size:24px;margin-top:36px;}")
+            appendLine(".description{color:#665b4d;margin-bottom:32px;} p{margin:0 0 14px;}")
+            appendLine("</style></head><body>")
+            appendLine("<h1>${book.title.escapeHtml()}</h1>")
+            if (book.description.isNotBlank()) {
+                appendLine("<div class=\"description\">${book.description.escapeHtml()}</div>")
+            }
+            chapters.forEach { chapter ->
+                appendLine("<h2>${chapter.title.escapeHtml()}</h2>")
+                appendLine(chapter.content.ifBlank { "<p></p>" })
+            }
+            appendLine("</body></html>")
+        }
+    }
+
     private fun Book.toJson() = JSONObject()
         .put("id", id)
         .put("title", title)
@@ -135,5 +161,18 @@ class BackupRepository @Inject constructor(
     private fun JSONObject.optStringOrNull(name: String): String? {
         if (!has(name) || isNull(name)) return null
         return optString(name).takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    private fun String.escapeHtml(): String = buildString {
+        this@escapeHtml.forEach { char ->
+            when (char) {
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '&' -> append("&amp;")
+                '"' -> append("&quot;")
+                '\'' -> append("&#39;")
+                else -> append(char)
+            }
+        }
     }
 }
