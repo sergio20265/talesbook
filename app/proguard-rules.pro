@@ -1,0 +1,2 @@
+-keep class ru.norahobbits.talesbook.** { *; }
+-keepclassmembers class * extends androidx.room.RoomDatabase { *; }
