@@ -26,5 +26,7 @@ data class Chapter(
     val updatedAt: Long = System.currentTimeMillis(),
     val sortOrder: Int = 0,
     val wordCount: Int = 0,
+    val charCountWithSpaces: Int = 0,
+    val charCountWithoutSpaces: Int = 0,
     val backgroundImageUri: String? = null
 )

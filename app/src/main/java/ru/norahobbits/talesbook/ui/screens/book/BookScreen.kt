@@ -50,7 +50,7 @@ fun BookScreen(
     val windowSize = rememberWindowSizeClass()
     val book by viewModel.book.collectAsState()
     val chapters by viewModel.chapters.collectAsState()
-    val totalWords by viewModel.totalWords.collectAsState()
+    val stats by viewModel.stats.collectAsState()
 
     var showCreateChapter by remember { mutableStateOf(false) }
     var chapterToDelete by remember { mutableStateOf<Chapter?>(null) }
@@ -183,7 +183,7 @@ fun BookScreen(
                     BookHeader(
                         coverUri = book?.coverImageUri,
                         description = book?.description ?: "",
-                        totalWords = totalWords,
+                        stats = stats,
                         onChangeCover = { coverLauncher.launch(arrayOf("image/*")) }
                     )
                     Spacer(Modifier.height(16.dp))
@@ -312,7 +312,7 @@ fun BookScreen(
 private fun BookHeader(
     coverUri: String?,
     description: String,
-    totalWords: Int,
+    stats: BookStats,
     onChangeCover: () -> Unit
 ) {
     val colors = LocalTalesbookColors.current
@@ -366,11 +366,16 @@ private fun BookHeader(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (totalWords > 0) {
+            if (stats.words > 0 || stats.charsWithSpaces > 0) {
                 Text(
-                    "$totalWords слов",
+                    "${stats.words} слов · ${stats.charsWithSpaces} зн · ${"%.2f".format(stats.authorSheets)} а. л.",
                     style = MaterialTheme.typography.labelMedium,
                     color = colors.accentSoft
+                )
+                Text(
+                    "${stats.charsWithoutSpaces} знаков без пробелов",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textHint
                 )
             }
             TextButton(
@@ -439,7 +444,7 @@ private fun ChapterItem(
                     )
                     if (chapter.wordCount > 0) {
                         Text(
-                            "${chapter.wordCount} слов",
+                            "${chapter.wordCount} слов · ${chapter.charCountWithSpaces} зн · ${"%.2f".format(chapter.charCountWithSpaces / 40_000.0)} а. л.",
                             style = MaterialTheme.typography.labelMedium,
                             color = colors.textHint
                         )

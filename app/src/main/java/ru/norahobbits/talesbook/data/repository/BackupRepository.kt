@@ -93,6 +93,8 @@ class BackupRepository @Inject constructor(
         .put("updatedAt", updatedAt)
         .put("sortOrder", sortOrder)
         .put("wordCount", wordCount)
+        .put("charCountWithSpaces", charCountWithSpaces)
+        .put("charCountWithoutSpaces", charCountWithoutSpaces)
         .put("backgroundImageUri", backgroundImageUri)
 
     private fun JSONArray.toBookList(): List<Book> = List(length()) { index ->
@@ -121,6 +123,8 @@ class BackupRepository @Inject constructor(
                 updatedAt = it.optLong("updatedAt", System.currentTimeMillis()),
                 sortOrder = it.optInt("sortOrder", 0),
                 wordCount = it.optInt("wordCount", 0),
+                charCountWithSpaces = it.optInt("charCountWithSpaces", it.optString("content", "").length),
+                charCountWithoutSpaces = it.optInt("charCountWithoutSpaces", it.optString("content", "").count { char -> !char.isWhitespace() }),
                 backgroundImageUri = it.optStringOrNull("backgroundImageUri")
             )
         }

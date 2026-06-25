@@ -7,7 +7,7 @@ import ru.norahobbits.talesbook.data.model.Chapter
 
 @Database(
     entities = [Book::class, Chapter::class],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {

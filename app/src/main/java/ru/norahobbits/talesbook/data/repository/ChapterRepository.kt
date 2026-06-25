@@ -25,9 +25,13 @@ class ChapterRepository @Inject constructor(
         val wordCount = chapter.content.trim()
             .split("\\s+".toRegex())
             .count { it.isNotEmpty() }
+        val charCountWithSpaces = chapter.content.length
+        val charCountWithoutSpaces = chapter.content.count { !it.isWhitespace() }
         val updated = chapter.copy(
             updatedAt = System.currentTimeMillis(),
-            wordCount = wordCount
+            wordCount = wordCount,
+            charCountWithSpaces = charCountWithSpaces,
+            charCountWithoutSpaces = charCountWithoutSpaces
         )
         chapterDao.update(updated)
         bookDao.getById(chapter.bookId)?.let {
@@ -38,4 +42,6 @@ class ChapterRepository @Inject constructor(
     suspend fun delete(chapter: Chapter) = chapterDao.delete(chapter)
 
     suspend fun totalWordCount(bookId: Long): Int = chapterDao.totalWordCount(bookId) ?: 0
+    suspend fun totalCharCountWithSpaces(bookId: Long): Int = chapterDao.totalCharCountWithSpaces(bookId) ?: 0
+    suspend fun totalCharCountWithoutSpaces(bookId: Long): Int = chapterDao.totalCharCountWithoutSpaces(bookId) ?: 0
 }

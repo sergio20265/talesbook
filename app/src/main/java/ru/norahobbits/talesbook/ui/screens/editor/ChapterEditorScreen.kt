@@ -106,7 +106,11 @@ fun ChapterEditorScreen(
     val wordCount = remember(contentValue.text) {
         contentValue.text.trim().split("\\s+".toRegex()).count { it.isNotEmpty() }
     }
-    val charCount = contentValue.text.length
+    val charCountWithSpaces = contentValue.text.length
+    val charCountWithoutSpaces = remember(contentValue.text) {
+        contentValue.text.count { !it.isWhitespace() }
+    }
+    val authorSheets = charCountWithSpaces / 40_000.0
 
     val textColor = Color(appSettings.textColor)
     val fontSize = localFontSize
@@ -267,7 +271,9 @@ fun ChapterEditorScreen(
             ) {
                 BottomBar(
                     wordCount = wordCount,
-                    charCount = charCount,
+                    charCountWithSpaces = charCountWithSpaces,
+                    charCountWithoutSpaces = charCountWithoutSpaces,
+                    authorSheets = authorSheets,
                     isSaving = state.isSaving,
                     fontSize = fontSize,
                     onFontSizeChange = { /* через AppearanceSettings */ }
@@ -376,7 +382,9 @@ private fun BasicTextField(
 @Composable
 private fun BottomBar(
     wordCount: Int,
-    charCount: Int,
+    charCountWithSpaces: Int,
+    charCountWithoutSpaces: Int,
+    authorSheets: Double,
     isSaving: Boolean,
     fontSize: Float,
     onFontSizeChange: (Float) -> Unit
@@ -393,11 +401,18 @@ private fun BottomBar(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                "$wordCount сл · $charCount зн",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.textHint
-            )
+            Column {
+                Text(
+                    "$wordCount сл · $charCountWithSpaces зн · ${"%.2f".format(authorSheets)} а. л.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.textHint
+                )
+                Text(
+                    "$charCountWithoutSpaces зн без пробелов",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textHint
+                )
+            }
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(visible = isSaving) {
                 Text(

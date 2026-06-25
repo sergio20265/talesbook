@@ -33,4 +33,10 @@ interface ChapterDao {
 
     @Query("SELECT SUM(wordCount) FROM chapters WHERE bookId = :bookId")
     suspend fun totalWordCount(bookId: Long): Int?
+
+    @Query("SELECT SUM(charCountWithSpaces) FROM chapters WHERE bookId = :bookId")
+    suspend fun totalCharCountWithSpaces(bookId: Long): Int?
+
+    @Query("SELECT SUM(charCountWithoutSpaces) FROM chapters WHERE bookId = :bookId")
+    suspend fun totalCharCountWithoutSpaces(bookId: Long): Int?
 }

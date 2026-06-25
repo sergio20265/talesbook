@@ -12,6 +12,14 @@ import ru.norahobbits.talesbook.data.repository.BookRepository
 import ru.norahobbits.talesbook.data.repository.ChapterRepository
 import javax.inject.Inject
 
+data class BookStats(
+    val words: Int = 0,
+    val charsWithSpaces: Int = 0,
+    val charsWithoutSpaces: Int = 0
+) {
+    val authorSheets: Double get() = charsWithSpaces / 40_000.0
+}
+
 @HiltViewModel
 class BookViewModel @Inject constructor(
     private val bookRepo: BookRepository,
@@ -27,8 +35,8 @@ class BookViewModel @Inject constructor(
     val chapters = chapterRepo.observeByBook(bookId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _totalWords = MutableStateFlow(0)
-    val totalWords: StateFlow<Int> = _totalWords.asStateFlow()
+    private val _stats = MutableStateFlow(BookStats())
+    val stats: StateFlow<BookStats> = _stats.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -36,7 +44,11 @@ class BookViewModel @Inject constructor(
         }
         viewModelScope.launch {
             chapters.collect {
-                _totalWords.value = chapterRepo.totalWordCount(bookId)
+                _stats.value = BookStats(
+                    words = chapterRepo.totalWordCount(bookId),
+                    charsWithSpaces = chapterRepo.totalCharCountWithSpaces(bookId),
+                    charsWithoutSpaces = chapterRepo.totalCharCountWithoutSpaces(bookId)
+                )
             }
         }
     }
