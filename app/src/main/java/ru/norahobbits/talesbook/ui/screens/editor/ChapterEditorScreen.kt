@@ -53,6 +53,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import ru.norahobbits.talesbook.data.model.Chapter
 import ru.norahobbits.talesbook.settings.AppSettings
 import ru.norahobbits.talesbook.ui.components.WindowSizeClass
@@ -74,6 +75,7 @@ fun ChapterEditorScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val state by viewModel.state.collectAsState()
     val chapter = state.chapter
+    val scope = rememberCoroutineScope()
 
     var titleValue by remember(chapter?.id) { mutableStateOf(chapter?.title ?: "") }
     var contentHtml by remember(chapter?.id) { mutableStateOf(chapter?.content ?: "") }
@@ -119,8 +121,10 @@ fun ChapterEditorScreen(
     }
 
     BackHandler {
-        viewModel.saveNow()
-        onBack()
+        scope.launch {
+            viewModel.saveNowAndWait()
+            onBack()
+        }
     }
 
     val wordCount = remember(contentPlainText) {
@@ -164,7 +168,12 @@ fun ChapterEditorScreen(
             ) {
                 TopAppBar(
                     navigationIcon = {
-                        IconButton(onClick = { viewModel.saveNow(); onBack() }) {
+                        IconButton(onClick = {
+                            scope.launch {
+                                viewModel.saveNowAndWait()
+                                onBack()
+                            }
+                        }) {
                             Icon(Icons.Default.ArrowBack, null, tint = colors.accent)
                         }
                     },
@@ -208,8 +217,10 @@ fun ChapterEditorScreen(
                         chapters = state.chapters,
                         currentChapterId = chapterId,
                         onOpenChapter = {
-                            viewModel.saveNow()
-                            onOpenChapter(it)
+                            scope.launch {
+                                viewModel.saveNowAndWait()
+                                onOpenChapter(it)
+                            }
                         }
                     )
                 }

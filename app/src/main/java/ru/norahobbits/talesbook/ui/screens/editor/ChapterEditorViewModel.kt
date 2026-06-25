@@ -74,6 +74,16 @@ class ChapterEditorViewModel @Inject constructor(
         persistCurrentChapter()
     }
 
+    suspend fun saveNowAndWait() {
+        saveJob?.cancelAndJoin()
+        val chapter = _state.value.chapter ?: return
+        withContext(NonCancellable) {
+            _state.update { it.copy(isSaving = true) }
+            chapterRepo.update(chapter)
+            _state.update { it.copy(isSaving = false, savedAt = System.currentTimeMillis()) }
+        }
+    }
+
     private fun persistCurrentChapter() {
         val chapter = _state.value.chapter ?: return
         viewModelScope.launch {
