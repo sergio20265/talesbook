@@ -262,7 +262,14 @@ fun ChapterEditorScreen(
                             )
                         }
                         Box(modifier = Modifier.weight(1f)) {
-                            key(chapterId) {
+                            // Only build the editor once the chapter has loaded. The chapter
+                            // is fetched asynchronously, so on the first frame it is null and
+                            // contentHtml is empty; creating the EditText then (keyed by the
+                            // stable route id) left it permanently empty because setText only
+                            // runs in the factory. Keying by the loaded id rebuilds it with the
+                            // real content the moment it arrives.
+                            if (chapter != null) {
+                                key(chapter.id) {
                                 RichTextEditor(
                                     initialHtml = contentHtml,
                                     textColor = textColor,
@@ -281,6 +288,7 @@ fun ChapterEditorScreen(
                                     focusMode = focusMode,
                                     modifier = Modifier.fillMaxSize()
                                 )
+                                }
                             }
                         }
                     }
@@ -452,6 +460,9 @@ private fun RichTextEditor(
     val colors = LocalTalesbookColors.current
     val context = LocalContext.current
     var editTextRef by remember { mutableStateOf<EditText?>(null) }
+    // Tracks the externally-loaded HTML we have applied to the EditText, so the update
+    // block can re-apply when the chapter content loads/changes without clobbering live typing.
+    var appliedHtml by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(editTextRef) {
         val editText = editTextRef ?: return@DisposableEffect onDispose {}
@@ -500,6 +511,7 @@ private fun RichTextEditor(
                 imeOptions = EditorInfo.IME_ACTION_NONE
                 setPadding(18.dp.value.toInt(), 16.dp.value.toInt(), 18.dp.value.toInt(), 16.dp.value.toInt())
                 setText(Html.fromHtml(normalizeToHtml(initialHtml), Html.FROM_HTML_MODE_LEGACY))
+                appliedHtml = initialHtml
                 setSelection(text?.length ?: 0)
                 requestFocus()
 
@@ -562,6 +574,20 @@ private fun RichTextEditor(
             editText.setTextColor(textColor.toArgb())
             editText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, fontSize)
             editText.typeface = androidTypeface(editText.context, fontFamily)
+            // The chapter content may arrive (or change) after the EditText is built — e.g. the
+            // async DB load. Re-apply it here, but only when it genuinely differs from what the
+            // editor already shows, so we never overwrite text the user is actively typing.
+            if (initialHtml != appliedHtml) {
+                val current = Html.toHtml(
+                    editText.text ?: Spannable.Factory.getInstance().newSpannable(""),
+                    Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE
+                )
+                if (current != initialHtml) {
+                    editText.setText(Html.fromHtml(normalizeToHtml(initialHtml), Html.FROM_HTML_MODE_LEGACY))
+                    editText.setSelection(editText.text?.length ?: 0)
+                }
+                appliedHtml = initialHtml
+            }
         }
     )
 }
