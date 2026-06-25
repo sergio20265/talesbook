@@ -26,6 +26,7 @@ class BackupRepository @Inject constructor(
             .put("settings", JSONObject()
                 .put("selectedTheme", settings.selectedTheme.name)
                 .put("fontSize", settings.fontSize)
+                .put("fontFamily", settings.fontFamily)
                 .put("textColor", settings.textColor)
                 .put("accentColor", settings.accentColor)
                 .put("editorBackgroundImageUri", settings.editorBackgroundImageUri)
@@ -58,6 +59,7 @@ class BackupRepository @Inject constructor(
                 settingsDataStore.updateTheme(runCatching { AppTheme.valueOf(it) }.getOrDefault(AppTheme.EVENING_FOREST))
             }
             if (settings.has("fontSize")) settingsDataStore.updateFontSize(settings.optDouble("fontSize", 16.0).toFloat())
+            settings.optStringOrNull("fontFamily")?.let { settingsDataStore.updateFontFamily(it) }
             if (settings.has("textColor")) settingsDataStore.updateTextColor(settings.optLong("textColor", 0xFFEFE8D8))
             if (settings.has("accentColor")) settingsDataStore.updateAccentColor(settings.optLong("accentColor", 0xFFB89B5E))
             settingsDataStore.updateEditorBgUri(settings.optStringOrNull("editorBackgroundImageUri"))

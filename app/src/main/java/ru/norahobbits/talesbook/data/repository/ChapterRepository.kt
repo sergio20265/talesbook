@@ -1,5 +1,6 @@
 package ru.norahobbits.talesbook.data.repository
 
+import android.text.Html
 import kotlinx.coroutines.flow.Flow
 import ru.norahobbits.talesbook.data.db.BookDao
 import ru.norahobbits.talesbook.data.db.ChapterDao
@@ -22,11 +23,12 @@ class ChapterRepository @Inject constructor(
     }
 
     suspend fun update(chapter: Chapter) {
-        val wordCount = chapter.content.trim()
+        val plainContent = Html.fromHtml(chapter.content, Html.FROM_HTML_MODE_LEGACY).toString()
+        val wordCount = plainContent.trim()
             .split("\\s+".toRegex())
             .count { it.isNotEmpty() }
-        val charCountWithSpaces = chapter.content.length
-        val charCountWithoutSpaces = chapter.content.count { !it.isWhitespace() }
+        val charCountWithSpaces = plainContent.length
+        val charCountWithoutSpaces = plainContent.count { !it.isWhitespace() }
         val updated = chapter.copy(
             updatedAt = System.currentTimeMillis(),
             wordCount = wordCount,

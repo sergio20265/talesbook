@@ -55,6 +55,13 @@ private val textColors = listOf(
     TextColorOption("Мягкая трава", 0xFFCFE3C2)
 )
 
+private val fontOptions = listOf(
+    "default" to "Спокойный",
+    "serif" to "Книжный",
+    "monospace" to "Моно",
+    "cursive" to "Рукописный"
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AppearanceSettingsScreen(
@@ -219,6 +226,26 @@ fun AppearanceSettingsScreen(
                     color = colors.textHint,
                     style = MaterialTheme.typography.labelMedium
                 )
+            }
+
+            SettingsSection("Шрифт текста", modifier = sectionModifier) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(fontOptions) { option ->
+                        FilterChip(
+                            selected = settings.fontFamily == option.first,
+                            onClick = { viewModel.setFontFamily(option.first) },
+                            label = { Text(option.second) },
+                            leadingIcon = if (settings.fontFamily == option.first) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = colors.accentDim,
+                                selectedLabelColor = colors.textPrimary,
+                                labelColor = colors.textSecondary
+                            )
+                        )
+                    }
+                }
             }
 
             SettingsSection("Цвет текста", modifier = sectionModifier) {

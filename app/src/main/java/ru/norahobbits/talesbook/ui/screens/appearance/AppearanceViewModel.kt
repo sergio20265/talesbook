@@ -24,6 +24,7 @@ class AppearanceViewModel @Inject constructor(
 
     fun setTheme(theme: AppTheme) = viewModelScope.launch { dataStore.updateTheme(theme) }
     fun setFontSize(size: Float) = viewModelScope.launch { dataStore.updateFontSize(size) }
+    fun setFontFamily(fontFamily: String) = viewModelScope.launch { dataStore.updateFontFamily(fontFamily) }
     fun setTextColor(color: Long) = viewModelScope.launch { dataStore.updateTextColor(color) }
     fun setEditorBg(uri: String?) = viewModelScope.launch { dataStore.updateEditorBgUri(uri) }
     fun setAppBg(uri: String?) = viewModelScope.launch { dataStore.updateAppBgUri(uri) }

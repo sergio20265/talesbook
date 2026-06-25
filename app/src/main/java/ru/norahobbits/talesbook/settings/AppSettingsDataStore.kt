@@ -19,6 +19,7 @@ class AppSettingsDataStore @Inject constructor(
     private object Keys {
         val THEME = stringPreferencesKey("theme")
         val FONT_SIZE = floatPreferencesKey("font_size")
+        val FONT_FAMILY = stringPreferencesKey("font_family")
         val TEXT_COLOR = longPreferencesKey("text_color")
         val ACCENT_COLOR = longPreferencesKey("accent_color")
         val EDITOR_BG_URI = stringPreferencesKey("editor_bg_uri")
@@ -36,6 +37,7 @@ class AppSettingsDataStore @Inject constructor(
                 AppTheme.valueOf(prefs[Keys.THEME] ?: AppTheme.EVENING_FOREST.name)
             }.getOrDefault(AppTheme.EVENING_FOREST),
             fontSize = prefs[Keys.FONT_SIZE] ?: 16f,
+            fontFamily = prefs[Keys.FONT_FAMILY] ?: "default",
             textColor = prefs[Keys.TEXT_COLOR] ?: 0xFFEFE8D8,
             accentColor = prefs[Keys.ACCENT_COLOR] ?: 0xFFB89B5E,
             editorBackgroundImageUri = prefs[Keys.EDITOR_BG_URI],
@@ -50,6 +52,7 @@ class AppSettingsDataStore @Inject constructor(
 
     suspend fun updateTheme(theme: AppTheme) = update { it[Keys.THEME] = theme.name }
     suspend fun updateFontSize(size: Float) = update { it[Keys.FONT_SIZE] = size }
+    suspend fun updateFontFamily(fontFamily: String) = update { it[Keys.FONT_FAMILY] = fontFamily }
     suspend fun updateTextColor(color: Long) = update { it[Keys.TEXT_COLOR] = color }
     suspend fun updateAccentColor(color: Long) = update { it[Keys.ACCENT_COLOR] = color }
     suspend fun updateEditorBgUri(uri: String?) = update {
