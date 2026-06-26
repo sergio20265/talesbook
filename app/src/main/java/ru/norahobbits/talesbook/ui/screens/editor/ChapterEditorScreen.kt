@@ -7,10 +7,11 @@ import android.graphics.Typeface
 import android.text.Editable
 import android.text.Html
 import android.text.Layout
-import android.text.Spannable
+import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextWatcher
 import android.text.style.AlignmentSpan
+import android.text.style.CharacterStyle
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import android.view.KeyEvent as AndroidKeyEvent
@@ -83,6 +84,8 @@ fun ChapterEditorScreen(
     var focusMode by remember { mutableStateOf(false) }
     var localFontSize by remember(appSettings.fontSize) { mutableFloatStateOf(appSettings.fontSize) }
     var editorActions by remember { mutableStateOf<RichEditorActions?>(null) }
+    var editorAtBottom by remember { mutableStateOf(false) }
+    var editorCanScroll by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
     val context = LocalContext.current
@@ -165,7 +168,14 @@ fun ChapterEditorScreen(
                 .background(MaterialTheme.colorScheme.background.copy(alpha = if (effectiveBgUri != null) 0.7f else 1f))
         )
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        // imePadding shrinks the editor to sit above the soft keyboard so the caret/text
+        // stays visible while typing. With no soft keyboard (e.g. a tablet's hardware
+        // keyboard) the IME inset is 0, so the editor keeps the full screen.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding()
+        ) {
             AnimatedVisibility(
                 visible = !focusMode,
                 enter = fadeIn() + slideInVertically(),
@@ -285,6 +295,10 @@ fun ChapterEditorScreen(
                                     onIncreaseFont = { localFontSize = (localFontSize + 1f).coerceAtMost(28f) },
                                     onDecreaseFont = { localFontSize = (localFontSize - 1f).coerceAtLeast(12f) },
                                     onExitFocus = { focusMode = false },
+                                    onScrollStateChanged = { atBottom, canScroll ->
+                                        editorAtBottom = atBottom
+                                        editorCanScroll = canScroll
+                                    },
                                     focusMode = focusMode,
                                     modifier = Modifier.fillMaxSize()
                                 )
@@ -318,7 +332,13 @@ fun ChapterEditorScreen(
                     authorSheets = authorSheets,
                     isSaving = state.isSaving,
                     fontSize = fontSize,
-                    onFontSizeChange = { /* через AppearanceSettings */ }
+                    onFontSizeChange = { /* через AppearanceSettings */ },
+                    showJump = editorCanScroll,
+                    atBottom = editorAtBottom,
+                    onJump = {
+                        if (editorAtBottom) editorActions?.scrollToTop?.invoke()
+                        else editorActions?.scrollToBottom?.invoke()
+                    }
                 )
             }
 
@@ -439,6 +459,8 @@ private data class RichEditorActions(
     val alignLeft: () -> Unit,
     val alignCenter: () -> Unit,
     val alignRight: () -> Unit,
+    val scrollToTop: () -> Unit,
+    val scrollToBottom: () -> Unit,
     val flush: () -> Unit
 )
 
@@ -454,6 +476,7 @@ private fun RichTextEditor(
     onIncreaseFont: () -> Unit,
     onDecreaseFont: () -> Unit,
     onExitFocus: () -> Unit,
+    onScrollStateChanged: (atBottom: Boolean, canScroll: Boolean) -> Unit,
     focusMode: Boolean,
     modifier: Modifier = Modifier
 ) {
@@ -470,11 +493,8 @@ private fun RichTextEditor(
         // so push the current HTML to the model explicitly after each formatting action —
         // otherwise formatting applied without further typing would be lost on save.
         val sync = {
-            val src = editText.text ?: Spannable.Factory.getInstance().newSpannable("")
-            onContentChanged(
-                Html.toHtml(src, Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE),
-                src.toString()
-            )
+            val src = editText.text ?: SpannableStringBuilder("")
+            onContentChanged(spannedToStorageHtml(src), src.toString())
         }
         onActionsReady(
             RichEditorActions(
@@ -484,6 +504,20 @@ private fun RichTextEditor(
                 alignLeft = { editText.setAlignment(Layout.Alignment.ALIGN_NORMAL); sync() },
                 alignCenter = { editText.setAlignment(Layout.Alignment.ALIGN_CENTER); sync() },
                 alignRight = { editText.setAlignment(Layout.Alignment.ALIGN_OPPOSITE); sync() },
+                scrollToTop = {
+                    editText.setSelection(0)
+                    editText.post {
+                        editText.scrollTo(0, 0)
+                        editText.reportScroll(onScrollStateChanged)
+                    }
+                },
+                scrollToBottom = {
+                    editText.setSelection(editText.text?.length ?: 0)
+                    editText.post {
+                        editText.scrollTo(0, editText.maxScrollY())
+                        editText.reportScroll(onScrollStateChanged)
+                    }
+                },
                 flush = sync
             )
         )
@@ -510,17 +544,22 @@ private fun RichTextEditor(
                     android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                 imeOptions = EditorInfo.IME_ACTION_NONE
                 setPadding(18.dp.value.toInt(), 16.dp.value.toInt(), 18.dp.value.toInt(), 16.dp.value.toInt())
-                setText(Html.fromHtml(normalizeToHtml(initialHtml), Html.FROM_HTML_MODE_LEGACY))
+                setText(storageHtmlToSpanned(initialHtml))
                 appliedHtml = initialHtml
-                setSelection(text?.length ?: 0)
+                setSelection(0)
                 requestFocus()
+                post { reportScroll(onScrollStateChanged) }
+
+                setOnScrollChangeListener { _, _, _, _, _ -> reportScroll(onScrollStateChanged) }
+                // Keyboard show/hide and text reflow change the scrollable height, so re-evaluate.
+                addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> post { reportScroll(onScrollStateChanged) } }
 
                 addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
                     override fun afterTextChanged(s: Editable?) {
-                        val html = Html.toHtml(s ?: Spannable.Factory.getInstance().newSpannable(""), Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE)
-                        onContentChanged(html, s?.toString().orEmpty())
+                        onContentChanged(spannedToStorageHtml(s ?: SpannableStringBuilder("")), s?.toString().orEmpty())
+                        post { reportScroll(onScrollStateChanged) }
                     }
                 })
 
@@ -578,12 +617,9 @@ private fun RichTextEditor(
             // async DB load. Re-apply it here, but only when it genuinely differs from what the
             // editor already shows, so we never overwrite text the user is actively typing.
             if (initialHtml != appliedHtml) {
-                val current = Html.toHtml(
-                    editText.text ?: Spannable.Factory.getInstance().newSpannable(""),
-                    Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE
-                )
+                val current = spannedToStorageHtml(editText.text ?: SpannableStringBuilder(""))
                 if (current != initialHtml) {
-                    editText.setText(Html.fromHtml(normalizeToHtml(initialHtml), Html.FROM_HTML_MODE_LEGACY))
+                    editText.setText(storageHtmlToSpanned(initialHtml))
                     editText.setSelection(editText.text?.length ?: 0)
                 }
                 appliedHtml = initialHtml
@@ -611,6 +647,19 @@ private fun EditText.toggleUnderline() {
  * [AlignmentSpan] is a paragraph span, so the range is expanded to line boundaries
  * and any previous alignment in that range is cleared first.
  */
+/** Maximum vertical scroll offset (0 when the content fits without scrolling). */
+private fun EditText.maxScrollY(): Int {
+    val l = layout ?: return 0
+    val viewport = height - totalPaddingTop - totalPaddingBottom
+    return (l.height - viewport).coerceAtLeast(0)
+}
+
+/** Reports (atBottom, canScroll) for driving the jump-to-top/bottom control. */
+private fun EditText.reportScroll(cb: (atBottom: Boolean, canScroll: Boolean) -> Unit) {
+    val max = maxScrollY()
+    cb(scrollY >= max - 2, max > 0)
+}
+
 private fun EditText.setAlignment(alignment: Layout.Alignment) {
     val editable = text ?: return
     val len = editable.length
@@ -628,6 +677,131 @@ private fun EditText.setAlignment(alignment: Layout.Alignment) {
     if (start >= end) return
     editable.getSpans(start, end, AlignmentSpan::class.java).forEach { editable.removeSpan(it) }
     editable.setSpan(AlignmentSpan.Standard(alignment), start, end, Spanned.SPAN_PARAGRAPH)
+}
+
+// --- Content (de)serialization -------------------------------------------------------------
+//
+// We deliberately do NOT use Html.toHtml/fromHtml for paragraph alignment: Android's round-trip
+// for AlignmentSpan is unreliable (the alignment renders in the EditText but is dropped on
+// toHtml on some devices, so it was lost on reload). Instead we serialize/parse alignment
+// ourselves as `<p style="text-align:...">` and only lean on the framework for inline marks
+// (bold/italic/underline) within each paragraph, which round-trip reliably.
+
+private val blockRegex = Regex(
+    "<(p|div|h[1-6]|blockquote)\\b([^>]*)>(.*?)</\\1>",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)
+private val textAlignRegex =
+    Regex("text-align\\s*:\\s*(left|right|center|start|end)", RegexOption.IGNORE_CASE)
+
+private fun parseAlignment(attrs: String): Layout.Alignment? {
+    val m = textAlignRegex.find(attrs) ?: return null
+    return when (m.groupValues[1].lowercase()) {
+        "center" -> Layout.Alignment.ALIGN_CENTER
+        "right", "end" -> Layout.Alignment.ALIGN_OPPOSITE
+        else -> Layout.Alignment.ALIGN_NORMAL
+    }
+}
+
+/** Parses stored content (our `<p style=…>` HTML, or legacy/markdown) into a styled [Spanned]. */
+private fun storageHtmlToSpanned(html: String): Spanned {
+    val normalized = normalizeToHtml(html)
+    val blocks = blockRegex.findAll(normalized).toList()
+    if (blocks.isEmpty()) return Html.fromHtml(normalized, Html.FROM_HTML_MODE_LEGACY)
+    val out = SpannableStringBuilder()
+    // Collect alignment ranges and apply them only after the whole text is assembled. Applying
+    // a SPAN_PARAGRAPH span and then appending more text would let that span grow into the
+    // following paragraphs (insert-at-boundary expansion), which made one aligned paragraph
+    // turn the rest of the chapter the same way on reload.
+    val alignRanges = ArrayList<Triple<Int, Int, Layout.Alignment>>()
+    blocks.forEachIndexed { index, m ->
+        val tag = m.groupValues[1].lowercase()
+        val attrs = m.groupValues[2]
+        val inner = m.groupValues[3]
+        val align = parseAlignment(attrs)
+        // Render inner marks via the framework (keeping the tag so headings keep their look),
+        // then strip any framework-applied alignment so ours stays authoritative.
+        val rendered = SpannableStringBuilder(
+            Html.fromHtml("<$tag>$inner</$tag>", Html.FROM_HTML_MODE_LEGACY)
+        )
+        while (rendered.isNotEmpty() && rendered.last() == '\n') rendered.delete(rendered.length - 1, rendered.length)
+        while (rendered.isNotEmpty() && rendered.first() == '\n') rendered.delete(0, 1)
+        rendered.getSpans(0, rendered.length, AlignmentSpan::class.java).forEach { rendered.removeSpan(it) }
+        val start = out.length
+        out.append(rendered)
+        if (index < blocks.size - 1) out.append("\n")
+        if (align != null && align != Layout.Alignment.ALIGN_NORMAL && out.length > start) {
+            alignRanges.add(Triple(start, out.length, align))
+        }
+    }
+    for ((start, end, align) in alignRanges) {
+        out.setSpan(AlignmentSpan.Standard(align), start, end, Spanned.SPAN_PARAGRAPH)
+    }
+    return out
+}
+
+/** Serializes the editor's [Spanned] to storage HTML, encoding per-paragraph alignment. */
+private fun spannedToStorageHtml(text: Spanned): String {
+    val len = text.length
+    val sb = StringBuilder()
+    var p = 0
+    while (true) {
+        var nl = p
+        while (nl < len && text[nl] != '\n') nl++
+        val align = text.getSpans(p, maxOf(p, nl), AlignmentSpan::class.java).lastOrNull()?.alignment
+        val style = when (align) {
+            Layout.Alignment.ALIGN_CENTER -> " style=\"text-align:center\""
+            Layout.Alignment.ALIGN_OPPOSITE -> " style=\"text-align:right\""
+            else -> ""
+        }
+        sb.append("<p").append(style).append(">")
+            .append(inlineToHtml(text, p, nl))
+            .append("</p>")
+        if (nl >= len) break
+        p = nl + 1
+    }
+    return sb.toString()
+}
+
+/** Serializes bold/italic/underline runs within a single paragraph range. */
+private fun inlineToHtml(text: Spanned, start: Int, end: Int): String {
+    if (end <= start) return ""
+    val sb = StringBuilder()
+    var i = start
+    while (i < end) {
+        val next = text.nextSpanTransition(i, end, CharacterStyle::class.java)
+        var bold = false
+        var italic = false
+        var underline = false
+        for (s in text.getSpans(i, next, CharacterStyle::class.java)) {
+            when (s) {
+                is StyleSpan -> {
+                    if (s.style and Typeface.BOLD != 0) bold = true
+                    if (s.style and Typeface.ITALIC != 0) italic = true
+                }
+                is UnderlineSpan -> underline = true
+            }
+        }
+        if (bold) sb.append("<b>")
+        if (italic) sb.append("<i>")
+        if (underline) sb.append("<u>")
+        sb.append(escapeForHtml(text.subSequence(i, next).toString()))
+        if (underline) sb.append("</u>")
+        if (italic) sb.append("</i>")
+        if (bold) sb.append("</b>")
+        i = next
+    }
+    return sb.toString()
+}
+
+private fun escapeForHtml(s: String): String = buildString {
+    for (c in s) when (c) {
+        '&' -> append("&amp;")
+        '<' -> append("&lt;")
+        '>' -> append("&gt;")
+        '\n' -> append("<br>")
+        else -> append(c)
+    }
 }
 
 private fun androidTypeface(context: Context, fontFamily: String): Typeface = when (fontFamily) {
@@ -776,7 +950,10 @@ private fun BottomBar(
     authorSheets: Double,
     isSaving: Boolean,
     fontSize: Float,
-    onFontSizeChange: (Float) -> Unit
+    onFontSizeChange: (Float) -> Unit,
+    showJump: Boolean,
+    atBottom: Boolean,
+    onJump: () -> Unit
 ) {
     val colors = LocalTalesbookColors.current
     Surface(
@@ -803,6 +980,17 @@ private fun BottomBar(
                 )
             }
             Spacer(Modifier.weight(1f))
+            if (showJump) {
+                IconButton(onClick = onJump) {
+                    Icon(
+                        if (atBottom) Icons.Default.KeyboardDoubleArrowUp
+                        else Icons.Default.KeyboardDoubleArrowDown,
+                        contentDescription = if (atBottom) "В начало главы" else "В конец главы",
+                        tint = colors.accent
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+            }
             AnimatedVisibility(visible = isSaving) {
                 Text(
                     "Сохраняется...",

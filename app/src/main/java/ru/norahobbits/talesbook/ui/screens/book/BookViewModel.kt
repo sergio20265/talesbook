@@ -90,5 +90,5 @@ class BookViewModel @Inject constructor(
 
     suspend fun exportBookHtml(): String = backupRepository.exportBookHtml(bookId)
 
-    suspend fun exportBookWord(): String = backupRepository.exportBookWord(bookId)
+    suspend fun exportBookDocx(): ByteArray = backupRepository.exportBookDocx(bookId)
 }

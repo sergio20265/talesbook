@@ -37,6 +37,7 @@ import ru.norahobbits.talesbook.ui.components.contentMaxWidth
 import ru.norahobbits.talesbook.ui.components.rememberWindowSizeClass
 import ru.norahobbits.talesbook.ui.theme.LocalTalesbookColors
 import ru.norahobbits.talesbook.ui.utils.safeFileName
+import ru.norahobbits.talesbook.ui.utils.shareBinaryFile
 import ru.norahobbits.talesbook.ui.utils.shareTextFile
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -158,17 +159,17 @@ fun BookScreen(
                                 onDismissRequest = { showExportMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("Word (.doc)") },
+                                    text = { Text("Word (.docx)") },
                                     onClick = {
                                         showExportMenu = false
                                         scope.launch {
                                             val title = book?.title ?: "book-of-tales"
-                                            val doc = viewModel.exportBookWord()
-                                            shareTextFile(
+                                            val docx = viewModel.exportBookDocx()
+                                            shareBinaryFile(
                                                 context = context,
-                                                fileName = "${safeFileName(title)}.doc",
-                                                mimeType = "application/msword",
-                                                content = doc,
+                                                fileName = "${safeFileName(title)}.docx",
+                                                mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                                bytes = docx,
                                                 chooserTitle = "Экспортировать в Word"
                                             )
                                         }

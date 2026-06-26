@@ -4,6 +4,9 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import ru.norahobbits.talesbook.data.db.AppDatabase
 import ru.norahobbits.talesbook.data.model.Book
 import ru.norahobbits.talesbook.data.model.Chapter
@@ -110,38 +113,171 @@ class BackupRepository @Inject constructor(
         .replace("text-align:start", "text-align:left")
         .replace("text-align:end", "text-align:right")
 
-    suspend fun exportBookWord(bookId: Long): String {
+    /**
+     * Builds a real `.docx` (OpenXML) package. Unlike HTML-with-a-.doc-extension — which
+     * desktop Word tolerates but Word for Android refuses to open — this is a proper
+     * WordprocessingML zip that opens in Word mobile, Google Docs, etc.
+     */
+    suspend fun exportBookDocx(bookId: Long): ByteArray {
         val book = db.bookDao().getById(bookId) ?: error("Книга не найдена")
         val chapters = db.chapterDao().getAll()
             .filter { it.bookId == bookId }
             .sortedWith(compareBy({ it.sortOrder }, { it.createdAt }))
-        return buildString {
-            appendLine("<html xmlns:o=\"urn:schemas-microsoft-com:office:office\" " +
-                "xmlns:w=\"urn:schemas-microsoft-com:office:word\" " +
-                "xmlns=\"http://www.w3.org/TR/REC-html40\">")
-            appendLine("<head><meta charset=\"utf-8\">")
-            appendLine("<meta name=\"ProgId\" content=\"Word.Document\">")
-            appendLine("<title>${book.title.escapeHtml()}</title>")
-            appendLine("<!--[if gte mso 9]><xml><w:WordDocument>" +
-                "<w:View>Print</w:View><w:Zoom>100</w:Zoom>" +
-                "</w:WordDocument></xml><![endif]-->")
-            appendLine("<style>")
-            appendLine("@page{margin:2cm;}")
-            appendLine("body{font-family:'Times New Roman',serif;font-size:14pt;line-height:1.5;}")
-            appendLine("h1{font-size:24pt;text-align:center;} h2{font-size:18pt;page-break-before:always;}")
-            appendLine(".description{font-style:italic;text-align:center;color:#555;} p{margin:0 0 8pt;text-indent:1.25cm;}")
-            appendLine("</style></head><body>")
-            appendLine("<h1>${book.title.escapeHtml()}</h1>")
-            if (book.description.isNotBlank()) {
-                appendLine("<p class=\"description\">${book.description.escapeHtml()}</p>")
+
+        val body = StringBuilder()
+        body.append(docxHeading(book.title, sizeHalfPt = 48, jc = "center"))
+        if (book.description.isNotBlank()) {
+            body.append(docxHeading(book.description, sizeHalfPt = 24, jc = "center", italic = true))
+        }
+        chapters.forEach { chapter ->
+            body.append(docxHeading(chapter.title, sizeHalfPt = 36, jc = "left"))
+            body.append(docxBodyParagraphs(chapter.content))
+        }
+
+        val documentXml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">" +
+            "<w:body>$body" +
+            "<w:sectPr><w:pgMar w:top=\"1134\" w:right=\"1134\" w:bottom=\"1134\" w:left=\"1134\"/></w:sectPr>" +
+            "</w:body></w:document>"
+
+        return buildDocxZip(documentXml)
+    }
+
+    private fun buildDocxZip(documentXml: String): ByteArray {
+        val contentTypes =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
+            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>" +
+            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
+            "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>" +
+            "</Types>"
+        val rels =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
+            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>" +
+            "</Relationships>"
+
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            fun put(name: String, content: String) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(content.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
             }
-            chapters.forEach { chapter ->
-                appendLine("<h2>${chapter.title.escapeHtml()}</h2>")
-                appendLine(chapter.content.exportContentHtml())
+            put("[Content_Types].xml", contentTypes)
+            put("_rels/.rels", rels)
+            put("word/document.xml", documentXml)
+        }
+        return out.toByteArray()
+    }
+
+    private fun docxHeading(text: String, sizeHalfPt: Int, jc: String, italic: Boolean = false): String {
+        val rpr = buildString {
+            append("<w:rPr><w:b/>")
+            if (italic) append("<w:i/>")
+            append("<w:sz w:val=\"$sizeHalfPt\"/></w:rPr>")
+        }
+        return "<w:p><w:pPr><w:jc w:val=\"$jc\"/><w:spacing w:before=\"240\" w:after=\"120\"/>$rpr</w:pPr>" +
+            "<w:r>$rpr<w:t xml:space=\"preserve\">${text.xmlEscape()}</w:t></w:r></w:p>"
+    }
+
+    private val blockRegex = Regex(
+        "<(p|div|h[1-6]|blockquote)\\b([^>]*)>(.*?)</\\1>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    )
+
+    /** Converts a chapter's stored content HTML into WordprocessingML paragraphs. */
+    private fun docxBodyParagraphs(content: String): String {
+        if (content.isBlank()) return "<w:p/>"
+        val blocks = blockRegex.findAll(content).toList()
+        if (blocks.isEmpty()) {
+            // Legacy plain text: one paragraph per line.
+            return content.split("\n").joinToString("") { line ->
+                docxParagraph(docxRunsFromInline(line.htmlUnescape().xmlEscape()), null)
             }
-            appendLine("</body></html>")
+        }
+        return blocks.joinToString("") { m ->
+            val attrs = m.groupValues[2]
+            val inner = m.groupValues[3]
+            val jc = when {
+                Regex("text-align\\s*:\\s*center", RegexOption.IGNORE_CASE).containsMatchIn(attrs) -> "center"
+                Regex("text-align\\s*:\\s*(right|end)", RegexOption.IGNORE_CASE).containsMatchIn(attrs) -> "right"
+                else -> null
+            }
+            docxParagraph(docxRunsFromInline(inner), jc)
         }
     }
+
+    private fun docxParagraph(runs: String, jc: String?): String {
+        val ppr = if (jc != null) "<w:pPr><w:jc w:val=\"$jc\"/></w:pPr>" else ""
+        return "<w:p>$ppr$runs</w:p>"
+    }
+
+    /** Parses inline `<b>/<i>/<u>/<br>` and entities of one paragraph into Word runs. */
+    private fun docxRunsFromInline(inner: String): String {
+        val out = StringBuilder()
+        val buf = StringBuilder()
+        var bold = false
+        var italic = false
+        var underline = false
+        fun flush() {
+            if (buf.isEmpty()) return
+            out.append("<w:r><w:rPr>")
+            if (bold) out.append("<w:b/>")
+            if (italic) out.append("<w:i/>")
+            if (underline) out.append("<w:u w:val=\"single\"/>")
+            out.append("</w:rPr><w:t xml:space=\"preserve\">").append(buf).append("</w:t></w:r>")
+            buf.clear()
+        }
+        var i = 0
+        while (i < inner.length) {
+            val c = inner[i]
+            if (c == '<') {
+                val gt = inner.indexOf('>', i)
+                if (gt < 0) break
+                when (inner.substring(i + 1, gt).trim().lowercase().removeSuffix("/").trim()) {
+                    "b", "strong" -> { flush(); bold = true }
+                    "/b", "/strong" -> { flush(); bold = false }
+                    "i", "em" -> { flush(); italic = true }
+                    "/i", "/em" -> { flush(); italic = false }
+                    "u" -> { flush(); underline = true }
+                    "/u" -> { flush(); underline = false }
+                    "br" -> { flush(); out.append("<w:r><w:br/></w:r>") }
+                }
+                i = gt + 1
+            } else if (c == '&') {
+                val semi = inner.indexOf(';', i)
+                if (semi in (i + 1)..(i + 7)) {
+                    buf.append(inner.substring(i, semi + 1).htmlUnescape().xmlEscape())
+                    i = semi + 1
+                } else {
+                    buf.append("&amp;"); i++
+                }
+            } else {
+                buf.append(c.toString().xmlEscape()); i++
+            }
+        }
+        flush()
+        return out.toString()
+    }
+
+    private fun String.xmlEscape(): String = buildString {
+        for (c in this@xmlEscape) when (c) {
+            '&' -> append("&amp;")
+            '<' -> append("&lt;")
+            '>' -> append("&gt;")
+            else -> append(c)
+        }
+    }
+
+    private fun String.htmlUnescape(): String = this
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ")
 
     private fun Book.toJson() = JSONObject()
         .put("id", id)
